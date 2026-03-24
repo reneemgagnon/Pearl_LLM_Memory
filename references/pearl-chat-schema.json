@@ -1,0 +1,898 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nobot.ai/schemas/pearl/chat-context/0.1/pearl-chat.schema.json",
+  "title": "PEARL Chat Context Envelope",
+  "description": "JSON-native .pearl envelope for model/chat context. Current working state remains materialized at the surface while prior context states are carried inward through non-mutating lineage.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "pearl_version",
+    "pearl_type",
+    "media_type",
+    "spec",
+    "encoding",
+    "core",
+    "surface",
+    "lineage",
+    "policy",
+    "layers",
+    "provenance"
+  ],
+  "properties": {
+    "pearl_version": {
+      "type": "string",
+      "pattern": "^0\\.1(\\.\\d+)?$"
+    },
+    "pearl_type": {
+      "const": "chat_context"
+    },
+    "media_type": {
+      "const": "application/vnd.pearl.chat+json"
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version"
+      ],
+      "properties": {
+        "name": {
+          "const": "PEARL-CHAT"
+        },
+        "version": {
+          "type": "string"
+        },
+        "compatibility": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "encoding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "charset",
+        "canonical_json",
+        "compression_order"
+      ],
+      "properties": {
+        "charset": {
+          "const": "utf-8"
+        },
+        "canonical_json": {
+          "type": "string",
+          "enum": [
+            "JCS-RFC8785",
+            "none"
+          ]
+        },
+        "compression_order": {
+          "type": "string",
+          "enum": [
+            "compress_before_encrypt",
+            "compress_only",
+            "none"
+          ]
+        },
+        "compression": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "algorithm": {
+              "type": "string"
+            },
+            "level": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 22
+            },
+            "dictionary_id": {
+              "type": "string"
+            }
+          }
+        },
+        "encryption": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "core": {
+      "$ref": "#/$defs/coreContext"
+    },
+    "surface": {
+      "$ref": "#/$defs/surfaceState"
+    },
+    "lineage": {
+      "$ref": "#/$defs/lineage"
+    },
+    "policy": {
+      "$ref": "#/$defs/policy"
+    },
+    "branches": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/branch"
+      }
+    },
+    "layers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/layer"
+      }
+    },
+    "capsules": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/capsule"
+      }
+    },
+    "provenance": {
+      "$ref": "#/$defs/provenance"
+    },
+    "signatures": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/signature"
+      }
+    },
+    "extensions": {
+      "type": "object",
+      "description": "Vendor- or model-specific fields. Must not mutate meaning of required core fields."
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "stringMap": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "jsonValue": {},
+    "coreContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "context_id",
+        "created_at",
+        "seed",
+        "objective"
+      ],
+      "properties": {
+        "context_id": {
+          "$ref": "#/$defs/id"
+        },
+        "created_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "seed": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "content"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "chat",
+                "task",
+                "incident",
+                "document",
+                "prompt",
+                "question",
+                "mixed"
+              ]
+            },
+            "content": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "summary"
+              ],
+              "properties": {
+                "summary": {
+                  "type": "string"
+                },
+                "source_refs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "raw_excerpt": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "objective": {
+          "type": "string"
+        },
+        "constraints": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "enduring_facts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "ontology": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "stakes": {
+          "type": "string"
+        },
+        "owner": {
+          "$ref": "#/$defs/actor"
+        },
+        "labels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "surfaceState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "updated_at",
+        "active_branch_id",
+        "hot",
+        "warm",
+        "cold"
+      ],
+      "properties": {
+        "updated_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "active_branch_id": {
+          "$ref": "#/$defs/id"
+        },
+        "focus": {
+          "type": "string"
+        },
+        "hot": {
+          "$ref": "#/$defs/temperatureBand"
+        },
+        "warm": {
+          "$ref": "#/$defs/temperatureBand"
+        },
+        "cold": {
+          "$ref": "#/$defs/temperatureBand"
+        },
+        "current_understanding": {
+          "type": "string"
+        },
+        "current_plan": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "open_loops": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "resolved_items": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "retrieval_cues": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "attention_weights": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "temperatureBand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "layer_ids"
+      ],
+      "properties": {
+        "layer_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "summary": {
+          "type": "string"
+        },
+        "token_budget_hint": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "lineage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "genesis_layer_id",
+        "current_layer_id",
+        "depth",
+        "chain_hash"
+      ],
+      "properties": {
+        "genesis_layer_id": {
+          "$ref": "#/$defs/id"
+        },
+        "current_layer_id": {
+          "$ref": "#/$defs/id"
+        },
+        "prior_layer_id": {
+          "$ref": "#/$defs/id"
+        },
+        "depth": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "branch_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "chain_hash": {
+          "type": "string"
+        },
+        "prior_chain_hash": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state_hash": {
+          "type": "string"
+        },
+        "forked_from_branch_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "compacted_from_layer_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "immutability",
+        "compaction",
+        "temperature_model"
+      ],
+      "properties": {
+        "immutability": {
+          "type": "string",
+          "enum": [
+            "prior_layers_must_not_mutate",
+            "advisory_only"
+          ]
+        },
+        "temperature_model": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "core_is_immutable",
+            "hot",
+            "warm",
+            "cold"
+          ],
+          "properties": {
+            "core_is_immutable": {
+              "const": true
+            },
+            "hot": {
+              "type": "string"
+            },
+            "warm": {
+              "type": "string"
+            },
+            "cold": {
+              "type": "string"
+            }
+          }
+        },
+        "compaction": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode"
+          ],
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": [
+                "snapshot_only",
+                "delta_allowed",
+                "capsule_allowed"
+              ]
+            },
+            "promote_hot_after_messages": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "promote_warm_after_compactions": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "cold_capsule_inline_threshold_bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "retain_exact_prior_state": {
+              "type": "boolean"
+            }
+          }
+        },
+        "branching": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "allow_parallel_interpretations": {
+              "type": "boolean"
+            },
+            "require_synthesis_on_merge": {
+              "type": "boolean"
+            }
+          }
+        },
+        "verification": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "hash_algorithm": {
+              "type": "string",
+              "enum": [
+                "sha256",
+                "sha3-256"
+              ]
+            },
+            "verify_without_unsealing": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "branch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "branch_id",
+        "name",
+        "status",
+        "head_layer_id"
+      ],
+      "properties": {
+        "branch_id": {
+          "$ref": "#/$defs/id"
+        },
+        "name": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "active",
+            "candidate",
+            "merged",
+            "abandoned",
+            "archived"
+          ]
+        },
+        "head_layer_id": {
+          "$ref": "#/$defs/id"
+        },
+        "parent_branch_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "intent": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "layer_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
+        }
+      }
+    },
+    "layer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "layer_id",
+        "created_at",
+        "temperature",
+        "kind",
+        "actor",
+        "state",
+        "hashes"
+      ],
+      "properties": {
+        "layer_id": {
+          "$ref": "#/$defs/id"
+        },
+        "created_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "temperature": {
+          "type": "string",
+          "enum": [
+            "hot",
+            "warm",
+            "cold",
+            "governance"
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "seed",
+            "observation",
+            "message_turn",
+            "tool_result",
+            "interpretation",
+            "counter_interpretation",
+            "synthesis",
+            "decision",
+            "memory",
+            "compaction_event",
+            "branch_event",
+            "unseal_event",
+            "governance_event"
+          ]
+        },
+        "actor": {
+          "$ref": "#/$defs/actor"
+        },
+        "branch_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "caused_by": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/cause"
+          }
+        },
+        "state": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "summary"
+          ],
+          "properties": {
+            "summary": {
+              "type": "string"
+            },
+            "claims": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "questions": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "evidence_refs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "payload": {
+              "description": "Layer-specific exact state or compacted payload.",
+              "oneOf": [
+                {
+                  "type": "object"
+                },
+                {
+                  "type": "array"
+                },
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "state_patch": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            },
+            "lens": {
+              "type": "string"
+            },
+            "confidence": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "open_loops": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "prior_capsule": {
+          "$ref": "#/$defs/capsule"
+        },
+        "hashes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "layer_hash"
+          ],
+          "properties": {
+            "layer_hash": {
+              "type": "string"
+            },
+            "preimage_hash": {
+              "type": "string"
+            },
+            "prior_capsule_hash": {
+              "type": "string"
+            }
+          }
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "capsule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "representation"
+      ],
+      "properties": {
+        "representation": {
+          "type": "string",
+          "enum": [
+            "none",
+            "inline_snapshot",
+            "inline_delta",
+            "compressed_inline",
+            "external_ref",
+            "hash_only"
+          ]
+        },
+        "content_type": {
+          "type": "string"
+        },
+        "encoding": {
+          "type": "string"
+        },
+        "body": {
+          "description": "When inline, the embedded prior state or compacted bytes representation.",
+          "oneOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "array"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "locator": {
+          "type": "string"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "hash": {
+          "type": "string"
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "created_by",
+        "created_at"
+      ],
+      "properties": {
+        "created_by": {
+          "$ref": "#/$defs/actor"
+        },
+        "created_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "updated_by": {
+          "$ref": "#/$defs/actor"
+        },
+        "updated_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "source_session_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "source_message_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "tool_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "alg",
+        "key_id",
+        "value"
+      ],
+      "properties": {
+        "alg": {
+          "type": "string"
+        },
+        "key_id": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "envelope",
+            "layer",
+            "capsule",
+            "surface"
+          ]
+        }
+      }
+    },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "user",
+            "assistant",
+            "tool",
+            "system",
+            "reviewer",
+            "agent"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "tool_name": {
+          "type": "string"
+        }
+      }
+    },
+    "cause": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "ref"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "message",
+            "tool_call",
+            "tool_result",
+            "user_edit",
+            "compaction",
+            "merge",
+            "import",
+            "manual_review"
+          ]
+        },
+        "ref": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

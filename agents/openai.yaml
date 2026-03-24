@@ -1,0 +1,7 @@
+interface:
+  display_name: "Pearl - CONTEXT"
+  short_description: "Pearl - Externalized Cognitive State Transfer"
+  icon_large: "./assets/pearl_logo.png"
+  default_prompt: "Load Last PEARL Context: Use it to inform your next response. "
+
+
