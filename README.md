@@ -1,4 +1,4 @@
-# PEARL-CHAT
+# PEARL-LLM Memory
 
 **PEARL**: Protected · Evolving · Annotation · Resistant · Layering
 
