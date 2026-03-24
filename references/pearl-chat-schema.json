@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://nobot.ai/schemas/pearl/chat-context/0.1/pearl-chat.schema.json",
-  "title": "PEARL Chat Context Envelope",
-  "description": "JSON-native .pearl envelope for model/chat context. Current working state remains materialized at the surface while prior context states are carried inward through non-mutating lineage.",
+  "$id": "https://nobot.ai/schemas/pearl/chat-context/0.2/pearl-chat.schema.json",
+  "title": "PEARL Chat Context Envelope v0.2",
+  "description": "JSON-native .pearl envelope for model and chat context with immutable core, append-only layers, and hash-linked lineage.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -15,19 +15,23 @@
     "surface",
     "lineage",
     "policy",
+    "branches",
     "layers",
     "provenance"
   ],
   "properties": {
     "pearl_version": {
       "type": "string",
-      "pattern": "^0\\.1(\\.\\d+)?$"
+      "pattern": "^0\\.2(\\.\\d+)?$"
     },
     "pearl_type": {
       "const": "chat_context"
     },
     "media_type": {
       "const": "application/vnd.pearl.chat+json"
+    },
+    "_core_hash": {
+      "type": "string"
     },
     "spec": {
       "type": "object",
@@ -155,13 +159,44 @@
       "type": "string",
       "format": "date-time"
     },
-    "stringMap": {
+    "actor": {
       "type": "object",
-      "additionalProperties": {
-        "type": "string"
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id"
+      ],
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
       }
     },
-    "jsonValue": {},
+    "cause": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "ref"
+      ],
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        }
+      }
+    },
     "coreContext": {
       "type": "object",
       "additionalProperties": false,
@@ -373,6 +408,9 @@
         "chain_hash": {
           "type": "string"
         },
+        "chain_hash_derivation": {
+          "type": "string"
+        },
         "prior_chain_hash": {
           "type": [
             "string",
@@ -411,6 +449,9 @@
             "prior_layers_must_not_mutate",
             "advisory_only"
           ]
+        },
+        "core_immutability": {
+          "type": "string"
         },
         "temperature_model": {
           "type": "object",
@@ -463,6 +504,10 @@
               "type": "integer",
               "minimum": 0
             },
+            "compress_capsule_above_bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
             "retain_exact_prior_state": {
               "type": "boolean"
             }
@@ -477,6 +522,9 @@
             },
             "require_synthesis_on_merge": {
               "type": "boolean"
+            },
+            "enforce_single_active_branch": {
+              "type": "boolean"
             }
           }
         },
@@ -490,6 +538,9 @@
                 "sha256",
                 "sha3-256"
               ]
+            },
+            "canonical_json": {
+              "type": "string"
             },
             "verify_without_unsealing": {
               "type": "boolean"
@@ -519,7 +570,9 @@
           "enum": [
             "active",
             "candidate",
+            "suspended",
             "merged",
+            "rejected",
             "abandoned",
             "archived"
           ]
@@ -590,7 +643,14 @@
             "compaction_event",
             "branch_event",
             "unseal_event",
+            "reopen_event",
             "governance_event"
+          ]
+        },
+        "phase": {
+          "type": [
+            "string",
+            "null"
           ]
         },
         "actor": {
@@ -608,9 +668,15 @@
             "$ref": "#/$defs/cause"
           }
         },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "state": {
           "type": "object",
-          "additionalProperties": false,
+          "additionalProperties": true,
           "required": [
             "summary"
           ],
@@ -629,44 +695,6 @@
               "items": {
                 "type": "string"
               }
-            },
-            "evidence_refs": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "payload": {
-              "description": "Layer-specific exact state or compacted payload.",
-              "oneOf": [
-                {
-                  "type": "object"
-                },
-                {
-                  "type": "array"
-                },
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "number"
-                },
-                {
-                  "type": "boolean"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "state_patch": {
-              "type": "array",
-              "items": {
-                "type": "object"
-              }
-            },
-            "lens": {
-              "type": "string"
             },
             "confidence": {
               "type": "number",
@@ -692,6 +720,15 @@
           ],
           "properties": {
             "layer_hash": {
+              "type": "string"
+            },
+            "chain_hash": {
+              "type": "string"
+            },
+            "prior_layer_id": {
+              "type": "string"
+            },
+            "prior_chain_hash": {
               "type": "string"
             },
             "preimage_hash": {
@@ -735,7 +772,6 @@
           "type": "string"
         },
         "body": {
-          "description": "When inline, the embedded prior state or compacted bytes representation.",
           "oneOf": [
             {
               "type": "object"
@@ -755,6 +791,10 @@
           "type": "string"
         },
         "size_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "compressed_bytes": {
           "type": "integer",
           "minimum": 0
         },
@@ -819,77 +859,6 @@
           "type": "string"
         },
         "value": {
-          "type": "string"
-        },
-        "scope": {
-          "type": "string",
-          "enum": [
-            "envelope",
-            "layer",
-            "capsule",
-            "surface"
-          ]
-        }
-      }
-    },
-    "actor": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "type",
-        "id"
-      ],
-      "properties": {
-        "type": {
-          "type": "string",
-          "enum": [
-            "user",
-            "assistant",
-            "tool",
-            "system",
-            "reviewer",
-            "agent"
-          ]
-        },
-        "id": {
-          "type": "string"
-        },
-        "name": {
-          "type": "string"
-        },
-        "model": {
-          "type": "string"
-        },
-        "tool_name": {
-          "type": "string"
-        }
-      }
-    },
-    "cause": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "type",
-        "ref"
-      ],
-      "properties": {
-        "type": {
-          "type": "string",
-          "enum": [
-            "message",
-            "tool_call",
-            "tool_result",
-            "user_edit",
-            "compaction",
-            "merge",
-            "import",
-            "manual_review"
-          ]
-        },
-        "ref": {
-          "type": "string"
-        },
-        "summary": {
           "type": "string"
         }
       }

@@ -44,6 +44,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(errors="replace")
+        except OSError:
+            pass
+
 PEARL_VERSION = "0.2"
 PEARL_TYPE = "chat_context"
 MEDIA_TYPE = "application/vnd.pearl.chat+json"
@@ -57,6 +64,7 @@ DEFAULT_PROMOTE_HOT_AFTER = 5
 DEFAULT_PROMOTE_WARM_AFTER = 3
 DEFAULT_COLD_THRESHOLD_BYTES = 8192
 DEFAULT_COMPRESS_THRESHOLD = 16384
+ENGINE_ACTOR = {"type": "system", "id": "pearl-engine", "name": "PEARL v0.2"}
 
 LAYER_PHASES = [
     "audit", "design", "refactor", "verification", "handoff",
@@ -134,6 +142,12 @@ def _layer(pearl, lid):
             return l
     return None
 
+def _branch(pearl, bid):
+    for branch in pearl.get("branches", []):
+        if branch["branch_id"] == bid:
+            return branch
+    return None
+
 def _single_active(pearl, new_id):
     """Enforce one active branch [FEEDBACK #6]."""
     for b in pearl["branches"]:
@@ -141,6 +155,41 @@ def _single_active(pearl, new_id):
             b["status"] = "active"
         elif b["status"] == "active":
             b["status"] = "suspended"
+
+def _touch_surface(pearl: dict, now: str, actor: Optional[dict] = None) -> None:
+    pearl["surface"]["updated_at"] = now
+    pearl["lineage"]["state_hash"] = _hash_jcs(pearl["surface"])
+    if actor is not None:
+        pearl["provenance"]["updated_by"] = actor
+        pearl["provenance"]["updated_at"] = now
+
+def _advance_lineage(
+    pearl: dict,
+    layer_id: str,
+    prior_layer_id: Optional[str],
+    chain_hash: str,
+    prior_chain_hash: Optional[str],
+    *,
+    extra: Optional[dict] = None,
+) -> None:
+    update = {
+        "current_layer_id": layer_id,
+        "prior_layer_id": prior_layer_id,
+        "depth": pearl["lineage"]["depth"] + 1,
+        "prior_chain_hash": prior_chain_hash,
+        "chain_hash": chain_hash,
+        "state_hash": _hash_jcs(pearl["surface"]),
+    }
+    if extra:
+        update.update(extra)
+    pearl["lineage"].update(update)
+
+def _append_to_branch(pearl: dict, branch_id: str, layer_id: str) -> None:
+    branch = _branch(pearl, branch_id)
+    if branch is None:
+        return
+    branch["head_layer_id"] = layer_id
+    branch.setdefault("layer_ids", []).append(layer_id)
 
 # ---------------------------------------------------------------------------
 # Capsule Compression [FEEDBACK #10]
@@ -184,7 +233,7 @@ def cmd_init(args):
         "constraints": args.constraints.split("|") if args.constraints else [],
         "enduring_facts": [], "ontology": [],
         "stakes": args.stakes or "",
-        "owner": {"type": "user", "id": args.owner or "claude-code-user"},
+        "owner": {"type": "user", "id": args.owner or "pearl-user"},
         "labels": args.labels.split(",") if args.labels else [],
     }
     ch = _core_hash(core)
@@ -195,7 +244,7 @@ def cmd_init(args):
 
     genesis = {
         "layer_id": gid, "created_at": now, "temperature": "hot", "kind": "seed",
-        "phase": None, "actor": {"type": "system", "id": "pearl-engine", "name": "PEARL v0.2"},
+        "phase": None, "actor": ENGINE_ACTOR,
         "branch_id": bid, "caused_by": [], "evidence_refs": [],
         "state": gs, "hashes": {"layer_hash": gh, "chain_hash": gc}, "tags": ["genesis"],
     }
@@ -241,7 +290,7 @@ def cmd_init(args):
         "encoding": {"charset": "utf-8", "canonical_json": "JCS-RFC8785", "compression_order": "none"},
         "_core_hash": ch, "core": core, "surface": surface, "lineage": lineage,
         "policy": policy, "branches": branches, "layers": [genesis],
-        "provenance": {"created_by": {"type": "system", "id": "pearl-engine", "name": "PEARL v0.2"}, "created_at": now},
+        "provenance": {"created_by": ENGINE_ACTOR, "created_at": now},
         "extensions": {},
     }
 
@@ -279,7 +328,7 @@ def cmd_add_layer(args):
     layer = {
         "layer_id": lid, "created_at": now, "temperature": args.temperature or "hot",
         "kind": args.kind, "phase": args.phase,
-        "actor": {"type": args.actor_type or "assistant", "id": args.actor_id or "claude-code"},
+        "actor": {"type": args.actor_type or "assistant", "id": args.actor_id or "pearl-agent"},
         "branch_id": ab, "caused_by": [], "evidence_refs": ev,
         "state": state,
         "hashes": {"layer_hash": lh, "chain_hash": ch, "prior_layer_id": prior_id, "prior_chain_hash": prior_ch},
@@ -288,7 +337,6 @@ def cmd_add_layer(args):
 
     pearl["layers"].append(layer)
     pearl["surface"]["hot"]["layer_ids"].append(lid)
-    pearl["surface"]["updated_at"] = now
 
     if args.understanding:
         pearl["surface"]["current_understanding"] = args.understanding
@@ -300,16 +348,9 @@ def cmd_add_layer(args):
         pearl["surface"]["resolved_items"] = pearl["surface"].get("resolved_items", []) + resolved
         pearl["surface"]["open_loops"] = [o for o in pearl["surface"].get("open_loops", []) if o not in resolved]
 
-    pearl["lineage"].update({"current_layer_id": lid, "prior_layer_id": prior_id,
-        "depth": pearl["lineage"]["depth"] + 1, "prior_chain_hash": prior_ch,
-        "chain_hash": ch, "state_hash": _hash_jcs(pearl["surface"])})
-
-    for b in pearl["branches"]:
-        if b["branch_id"] == ab:
-            b["head_layer_id"] = lid; b["layer_ids"].append(lid); break
-
-    pearl["provenance"]["updated_by"] = layer["actor"]
-    pearl["provenance"]["updated_at"] = now
+    _append_to_branch(pearl, ab, lid)
+    _touch_surface(pearl, now, layer["actor"])
+    _advance_lineage(pearl, lid, prior_id, ch, prior_ch)
 
     _save(pearl, fp)
     print(f"✓ Layer added: {lid}")
@@ -337,11 +378,12 @@ def cmd_promote(args):
 
     pearl["surface"]["hot"]["layer_ids"] = hot[len(promote):]
     pearl["surface"]["warm"]["layer_ids"] += promote
-    pearl["surface"]["updated_at"] = _now()
+    now = _now()
 
     for l in pearl["layers"]:
         if l["layer_id"] in promote: l["temperature"] = "warm"
 
+    _touch_surface(pearl, now, ENGINE_ACTOR)
     _save(pearl, fp)
     print(f"✓ Promoted {len(promote)} layers: hot → warm")
     for lid in promote: print(f"  → {lid}")
@@ -356,6 +398,8 @@ def cmd_compact(args):
 
     now = _now(); cid = f"layer-{_uid()}"
     pch = pearl["lineage"]["chain_hash"]
+    prior_id = pearl["lineage"]["current_layer_id"]
+    active_branch_id = pearl["surface"]["active_branch_id"]
 
     sums, evs = [], []
     for l in pearl["layers"]:
@@ -372,25 +416,32 @@ def cmd_compact(args):
 
     layer = {
         "layer_id": cid, "created_at": now, "temperature": "cold", "kind": "compaction_event",
-        "phase": None, "actor": {"type": "system", "id": "pearl-engine", "name": "PEARL v0.2"},
-        "branch_id": pearl["surface"]["active_branch_id"],
+        "phase": None, "actor": ENGINE_ACTOR,
+        "branch_id": active_branch_id,
         "caused_by": [{"type": "compaction", "ref": lid, "summary": "warm→cold"} for lid in warm],
         "evidence_refs": list(set(evs)), "state": state, "prior_capsule": cap,
-        "hashes": {"layer_hash": lh, "chain_hash": ch, "prior_chain_hash": pch, "prior_capsule_hash": cap["hash"]},
+        "hashes": {"layer_hash": lh, "chain_hash": ch, "prior_layer_id": prior_id,
+                   "prior_chain_hash": pch, "prior_capsule_hash": cap["hash"]},
         "tags": ["compaction"],
     }
 
     pearl["layers"].append(layer)
     pearl["surface"]["cold"]["layer_ids"] += warm + [cid]
     pearl["surface"]["warm"]["layer_ids"] = []
-    pearl["surface"]["updated_at"] = now
 
     for l in pearl["layers"]:
         if l["layer_id"] in warm: l["temperature"] = "cold"
 
-    pearl["lineage"].update({"current_layer_id": cid, "depth": pearl["lineage"]["depth"] + 1,
-        "prior_chain_hash": pch, "chain_hash": ch,
-        "compacted_from_layer_ids": pearl["lineage"].get("compacted_from_layer_ids", []) + warm})
+    _append_to_branch(pearl, active_branch_id, cid)
+    _touch_surface(pearl, now, layer["actor"])
+    _advance_lineage(
+        pearl,
+        cid,
+        prior_id,
+        ch,
+        pch,
+        extra={"compacted_from_layer_ids": pearl["lineage"].get("compacted_from_layer_ids", []) + warm},
+    )
 
     _save(pearl, fp)
     rep = cap["representation"]
@@ -407,6 +458,8 @@ def cmd_unseal(args):
     fp = Path(args.file); pearl = _load(fp)
     now = _now(); targets = args.layer_ids.split(",")
     pch = pearl["lineage"]["chain_hash"]
+    prior_id = pearl["lineage"]["current_layer_id"]
+    active_branch_id = pearl["surface"]["active_branch_id"]
     cold = pearl["surface"]["cold"]["layer_ids"]
 
     for t in targets:
@@ -420,24 +473,24 @@ def cmd_unseal(args):
 
     layer = {
         "layer_id": uid, "created_at": now, "temperature": "hot", "kind": "unseal_event",
-        "phase": None, "actor": {"type": "system", "id": "pearl-engine", "name": "PEARL v0.2"},
-        "branch_id": pearl["surface"]["active_branch_id"],
+        "phase": None, "actor": ENGINE_ACTOR,
+        "branch_id": active_branch_id,
         "caused_by": [{"type": "manual_review", "ref": t, "summary": f"Unseal: {args.reason}"} for t in targets],
         "evidence_refs": [], "state": state,
-        "hashes": {"layer_hash": lh, "chain_hash": ch, "prior_chain_hash": pch},
+        "hashes": {"layer_hash": lh, "chain_hash": ch, "prior_layer_id": prior_id, "prior_chain_hash": pch},
         "tags": ["unseal"],
     }
 
     pearl["layers"].append(layer)
     pearl["surface"]["cold"]["layer_ids"] = [l for l in cold if l not in targets]
     pearl["surface"]["hot"]["layer_ids"] = targets + [uid] + pearl["surface"]["hot"]["layer_ids"]
-    pearl["surface"]["updated_at"] = now
 
     for l in pearl["layers"]:
         if l["layer_id"] in targets: l["temperature"] = "hot"
 
-    pearl["lineage"].update({"current_layer_id": uid, "depth": pearl["lineage"]["depth"] + 1,
-        "prior_chain_hash": pch, "chain_hash": ch})
+    _append_to_branch(pearl, active_branch_id, uid)
+    _touch_surface(pearl, now, layer["actor"])
+    _advance_lineage(pearl, uid, prior_id, ch, pch)
 
     _save(pearl, fp)
     print(f"✓ Unsealed {len(targets)} layers: cold → hot")
@@ -455,36 +508,37 @@ def cmd_branch(args):
     head = pearl["lineage"]["current_layer_id"]
     pch = pearl["lineage"]["chain_hash"]
 
-    pearl["branches"].append({
-        "branch_id": bid, "name": args.name, "status": "candidate",
-        "head_layer_id": head, "parent_branch_id": parent,
-        "intent": args.intent or f"Explore: {args.name}",
-        "summary": args.name, "layer_ids": [],
-    })
-
     blid = f"layer-{_uid()}"
     state = {"summary": f"Branched '{args.name}' from {parent} at {head}"}
     lh = _hash_jcs(state); ch = _chain(pch, lh)
 
-    pearl["layers"].append({
+    layer = {
         "layer_id": blid, "created_at": now, "temperature": "hot", "kind": "branch_event",
-        "phase": None, "actor": {"type": "system", "id": "pearl-engine", "name": "PEARL v0.2"},
+        "phase": None, "actor": ENGINE_ACTOR,
         "branch_id": bid, "caused_by": [], "evidence_refs": [],
         "state": state,
-        "hashes": {"layer_hash": lh, "chain_hash": ch, "prior_chain_hash": pch},
+        "hashes": {"layer_hash": lh, "chain_hash": ch, "prior_layer_id": head, "prior_chain_hash": pch},
         "tags": ["branch-created"],
+    }
+
+    pearl["branches"].append({
+        "branch_id": bid, "name": args.name, "status": "candidate",
+        "head_layer_id": blid, "parent_branch_id": parent,
+        "intent": args.intent or f"Explore: {args.name}",
+        "summary": args.name, "layer_ids": [blid],
     })
+    pearl["layers"].append(layer)
+    pearl["surface"]["hot"]["layer_ids"].append(blid)
 
     pearl["lineage"]["branch_count"] = len(pearl["branches"])
-    pearl["lineage"]["chain_hash"] = ch
-    pearl["lineage"]["prior_chain_hash"] = pch
 
     if args.switch:
         _single_active(pearl, bid)
         pearl["surface"]["active_branch_id"] = bid
-        pearl["surface"]["updated_at"] = now
         print(f"  Switched to branch: {args.name} (prior branches suspended)")
 
+    _touch_surface(pearl, now, layer["actor"])
+    _advance_lineage(pearl, blid, head, ch, pch, extra={"branch_count": len(pearl["branches"])})
     _save(pearl, fp)
     print(f"✓ Branch created: {args.name} ({bid})")
 
@@ -494,6 +548,7 @@ def cmd_branch(args):
 def cmd_merge(args):
     fp = Path(args.file); pearl = _load(fp)
     now = _now(); pch = pearl["lineage"]["chain_hash"]
+    prior_id = pearl["lineage"]["current_layer_id"]
 
     target = None
     for b in pearl["branches"]:
@@ -516,6 +571,15 @@ def cmd_merge(args):
                 if b["branch_id"] == nm or b["name"] == nm:
                     rej_ids.append(b["branch_id"]); break
 
+    synthesis_branch_id = pearl["surface"]["active_branch_id"]
+    if args.switch_to_main:
+        main_branch = next((b for b in pearl["branches"] if b["name"] == "main"), None)
+        if main_branch is None:
+            print("ERROR: Main branch not found.", file=sys.stderr); sys.exit(1)
+        synthesis_branch_id = main_branch["branch_id"]
+        _single_active(pearl, synthesis_branch_id)
+        pearl["surface"]["active_branch_id"] = synthesis_branch_id
+
     sid = f"layer-{_uid()}"
     state = {"summary": args.summary or f"Merged branch '{target['name']}'",
              "claims": [f"Branch '{target['name']}' findings incorporated"]}
@@ -524,30 +588,26 @@ def cmd_merge(args):
 
     lh = _hash_jcs(state); ch = _chain(pch, lh)
 
-    pearl["layers"].append({
+    layer = {
         "layer_id": sid, "created_at": now, "temperature": "hot", "kind": "synthesis",
-        "phase": None, "actor": {"type": "assistant", "id": "claude-code"},
-        "branch_id": pearl["surface"]["active_branch_id"],
+        "phase": None, "actor": {"type": "assistant", "id": "pearl-agent"},
+        "branch_id": synthesis_branch_id,
         "caused_by": [{"type": "merge", "ref": target["branch_id"], "summary": f"Merged: {target['name']}"}],
         "evidence_refs": [], "state": state,
-        "hashes": {"layer_hash": lh, "chain_hash": ch, "prior_chain_hash": pch},
+        "hashes": {"layer_hash": lh, "chain_hash": ch, "prior_layer_id": prior_id, "prior_chain_hash": pch},
         "tags": ["merge-synthesis"],
-    })
+    }
 
+    pearl["layers"].append(layer)
     pearl["surface"]["hot"]["layer_ids"].append(sid)
-    pearl["surface"]["updated_at"] = now
     target["status"] = "merged"
     for b in pearl["branches"]:
         if b["branch_id"] in rej_ids: b["status"] = "rejected"
 
-    if args.switch_to_main:
-        for b in pearl["branches"]:
-            if b["name"] == "main":
-                _single_active(pearl, b["branch_id"])
-                pearl["surface"]["active_branch_id"] = b["branch_id"]; break
-
-    pearl["lineage"].update({"current_layer_id": sid, "depth": pearl["lineage"]["depth"] + 1,
-        "prior_chain_hash": pch, "chain_hash": ch})
+    _append_to_branch(pearl, synthesis_branch_id, sid)
+    pearl["lineage"]["branch_count"] = len(pearl["branches"])
+    _touch_surface(pearl, now, layer["actor"])
+    _advance_lineage(pearl, sid, prior_id, ch, pch, extra={"branch_count": len(pearl["branches"])})
 
     _save(pearl, fp)
     print(f"✓ Merged '{target['name']}' → synthesis {sid}")
@@ -657,7 +717,8 @@ def cmd_update_surface(args):
     if args.resolve_loop:
         pearl["surface"]["open_loops"] = [l for l in pearl["surface"].get("open_loops", []) if l != args.resolve_loop]
         pearl["surface"].setdefault("resolved_items", []).append(args.resolve_loop)
-    pearl["surface"]["updated_at"] = _now()
+    now = _now()
+    _touch_surface(pearl, now, ENGINE_ACTOR)
     _save(pearl, fp); print("✓ Surface updated.")
 
 # ===========================================================================
@@ -744,7 +805,7 @@ def build_parser():
     s.add_argument("--claims"); s.add_argument("--questions"); s.add_argument("--confidence", type=float)
     s.add_argument("--open-loops"); s.add_argument("--resolves"); s.add_argument("--understanding")
     s.add_argument("--payload"); s.add_argument("--evidence"); s.add_argument("--tags")
-    s.add_argument("--actor-type", default="assistant"); s.add_argument("--actor-id", default="claude-code")
+    s.add_argument("--actor-type", default="assistant"); s.add_argument("--actor-id", default="pearl-agent")
 
     s = subs.add_parser("promote"); s.add_argument("--force", action="store_true")
     s = subs.add_parser("compact"); s.add_argument("--summary", "-s")
@@ -771,13 +832,184 @@ def build_parser():
 
     return p
 
+def cmd_verify_v2(args):
+    fp = Path(args.file); pearl = _load(fp)
+    errors = []
+    layers = pearl["layers"]
+    layer_by_id = {layer["layer_id"]: layer for layer in layers}
+    branch_ids = {branch["branch_id"] for branch in pearl.get("branches", [])}
+
+    core_hash = pearl.get("_core_hash")
+    if core_hash:
+        actual = _core_hash(pearl["core"])
+        if actual != core_hash:
+            errors.append(f"CORE TAMPERED: {core_hash[:24]}... vs {actual[:24]}...")
+        else:
+            print("OK Core immutability: intact")
+    else:
+        print("WARN No _core_hash (v0.1 file?) - core check skipped")
+
+    layer_ok = 0
+    for layer in layers:
+        expected = _hash_jcs(layer["state"])
+        if expected != layer["hashes"]["layer_hash"]:
+            errors.append(f"Layer {layer['layer_id']}: hash mismatch")
+        else:
+            layer_ok += 1
+    print(f"OK Layer hashes: {layer_ok}/{len(layers)} verified")
+
+    if layers:
+        genesis = layers[0]
+        genesis_chain_hash = genesis["hashes"].get("chain_hash")
+        expected_genesis_chain_hash = _chain("genesis", genesis["hashes"]["layer_hash"])
+        if genesis_chain_hash != expected_genesis_chain_hash:
+            errors.append("Genesis chain_hash mismatch")
+        else:
+            running_chain_hash = genesis_chain_hash
+            prior_layer_id = genesis["layer_id"]
+            chain_verified = 1
+            for layer in layers[1:]:
+                layer_chain_hash = layer["hashes"].get("chain_hash")
+                expected_layer_chain_hash = _chain(running_chain_hash, layer["hashes"]["layer_hash"])
+                if layer_chain_hash != expected_layer_chain_hash:
+                    errors.append(f"Chain break at {layer['layer_id']}")
+                else:
+                    chain_verified += 1
+                if layer["hashes"].get("prior_chain_hash") != running_chain_hash:
+                    errors.append(f"Layer {layer['layer_id']}: prior_chain_hash mismatch")
+                if layer["hashes"].get("prior_layer_id") != prior_layer_id:
+                    errors.append(f"Layer {layer['layer_id']}: prior_layer_id mismatch")
+                running_chain_hash = layer_chain_hash
+                prior_layer_id = layer["layer_id"]
+            print(f"OK Chain hash: {chain_verified} links verified")
+
+        if pearl["lineage"].get("current_layer_id") != layers[-1]["layer_id"]:
+            errors.append("Lineage current_layer_id does not match latest layer")
+        if pearl["lineage"].get("chain_hash") != layers[-1]["hashes"].get("chain_hash"):
+            errors.append("Lineage chain_hash does not match latest layer")
+        expected_depth = len(layers) - 1
+        if pearl["lineage"].get("depth") != expected_depth:
+            errors.append(f"Lineage depth mismatch: expected {expected_depth}, got {pearl['lineage'].get('depth')}")
+
+    state_hash = pearl["lineage"].get("state_hash")
+    if state_hash:
+        if state_hash != _hash_jcs(pearl["surface"]):
+            errors.append("Surface state_hash mismatch")
+        else:
+            print("OK Surface state hash: intact")
+
+    for band in ("hot", "warm", "cold"):
+        for layer_id in pearl["surface"].get(band, {}).get("layer_ids", []):
+            layer = layer_by_id.get(layer_id)
+            if layer is None:
+                errors.append(f"Surface {band} references missing layer {layer_id}")
+                continue
+            if layer["temperature"] != band:
+                errors.append(
+                    f"Surface {band} references {layer_id}, but layer temperature is {layer['temperature']}"
+                )
+    print("OK Surface references: checked")
+
+    if pearl["surface"].get("active_branch_id") not in branch_ids:
+        errors.append("surface.active_branch_id does not reference a known branch")
+
+    active_branches = [branch for branch in pearl["branches"] if branch["status"] == "active"]
+    if len(active_branches) > 1:
+        errors.append(f"Multiple active branches: {len(active_branches)}")
+    elif len(active_branches) == 0:
+        errors.append("No active branch present")
+    else:
+        if pearl["surface"].get("active_branch_id") != active_branches[0]["branch_id"]:
+            errors.append("surface.active_branch_id does not match the active branch")
+        else:
+            print("OK Single active branch: enforced")
+
+    if pearl["lineage"].get("branch_count") not in (None, len(pearl.get("branches", []))):
+        errors.append("Lineage branch_count does not match branches array size")
+
+    for branch in pearl.get("branches", []):
+        if branch.get("head_layer_id") not in layer_by_id:
+            errors.append(f"Branch {branch['name']} head_layer_id points to a missing layer")
+        layer_ids = branch.get("layer_ids", [])
+        for layer_id in layer_ids:
+            if layer_id not in layer_by_id:
+                errors.append(f"Branch {branch['name']} references missing layer {layer_id}")
+        if layer_ids and branch.get("head_layer_id") != layer_ids[-1]:
+            errors.append(f"Branch {branch['name']} head_layer_id does not match latest layer")
+
+    for layer in layers:
+        branch_id = layer.get("branch_id")
+        if branch_id is not None and branch_id not in branch_ids:
+            errors.append(f"Layer {layer['layer_id']} references unknown branch {branch_id}")
+
+    if errors:
+        print(f"\nFAILED - {len(errors)} error(s):")
+        for error in errors:
+            print(f"  - {error}")
+        sys.exit(1)
+    print(f"\nOK All checks passed. {len(layers)} layers, chain intact.")
+
+def build_parser_v2():
+    file_parent = argparse.ArgumentParser(add_help=False)
+    file_parent.add_argument("--file", "-f", default=argparse.SUPPRESS)
+
+    p = argparse.ArgumentParser(
+        prog="pearl_session",
+        description="PEARL-CHAT v0.2 â€” Protected Â· Evolving Â· Annotation Â· Resistant Â· Layering",
+    )
+    p.add_argument("--file", "-f", default=str(DEFAULT_PEARL_FILE))
+    subs = p.add_subparsers(dest="command", required=True)
+
+    s = subs.add_parser("init", parents=[file_parent])
+    s.add_argument("--objective", "-o", required=True)
+    s.add_argument("--seed-kind", default="task", choices=["chat","task","incident","document","prompt","question","mixed"])
+    s.add_argument("--constraints"); s.add_argument("--stakes"); s.add_argument("--owner")
+    s.add_argument("--labels"); s.add_argument("--force", action="store_true")
+
+    s = subs.add_parser("add-layer", parents=[file_parent])
+    s.add_argument("--kind", "-k", required=True, choices=LAYER_KINDS)
+    s.add_argument("--summary", "-s", required=True)
+    s.add_argument("--phase", "-p", choices=LAYER_PHASES, default=None)
+    s.add_argument("--temperature", "-t", choices=["hot","warm","cold","governance"])
+    s.add_argument("--claims"); s.add_argument("--questions"); s.add_argument("--confidence", type=float)
+    s.add_argument("--open-loops"); s.add_argument("--resolves"); s.add_argument("--understanding")
+    s.add_argument("--payload"); s.add_argument("--evidence"); s.add_argument("--tags")
+    s.add_argument("--actor-type", default="assistant"); s.add_argument("--actor-id", default="pearl-agent")
+
+    s = subs.add_parser("promote", parents=[file_parent]); s.add_argument("--force", action="store_true")
+    s = subs.add_parser("compact", parents=[file_parent]); s.add_argument("--summary", "-s")
+
+    s = subs.add_parser("unseal", parents=[file_parent])
+    s.add_argument("--layer-ids", required=True); s.add_argument("--reason", required=True)
+
+    s = subs.add_parser("branch", parents=[file_parent])
+    s.add_argument("--name", "-n", required=True); s.add_argument("--intent")
+    s.add_argument("--switch", action="store_true")
+
+    s = subs.add_parser("merge", parents=[file_parent])
+    s.add_argument("--branch-id", "-b", required=True); s.add_argument("--summary", "-s")
+    s.add_argument("--accept"); s.add_argument("--reject"); s.add_argument("--switch-to-main", action="store_true")
+
+    subs.add_parser("surface", parents=[file_parent])
+    subs.add_parser("dump", parents=[file_parent])
+    subs.add_parser("verify", parents=[file_parent])
+
+    s = subs.add_parser("load-context", parents=[file_parent])
+    s.add_argument("--token-budget", type=int); s.add_argument("--format", choices=["json","text"], default="json")
+
+    s = subs.add_parser("update-surface", parents=[file_parent])
+    s.add_argument("--focus"); s.add_argument("--understanding"); s.add_argument("--plan")
+    s.add_argument("--add-loop"); s.add_argument("--resolve-loop")
+
+    return p
+
 DISPATCH = {"init": cmd_init, "add-layer": cmd_add_layer, "promote": cmd_promote,
     "compact": cmd_compact, "unseal": cmd_unseal, "branch": cmd_branch, "merge": cmd_merge,
     "surface": cmd_surface, "load-context": cmd_load_context, "update-surface": cmd_update_surface,
-    "dump": cmd_dump, "verify": cmd_verify}
+    "dump": cmd_dump, "verify": cmd_verify_v2}
 
 def main():
-    args = build_parser().parse_args()
+    args = build_parser_v2().parse_args()
     DISPATCH[args.command](args)
 
 if __name__ == "__main__":
