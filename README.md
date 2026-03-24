@@ -6,7 +6,7 @@ An open temporal context format and reference toolkit for agentic memory.
 
 ## What PEARL Is
 
-PEARL-CHAT (`.pearl`) is a JSON-based file format for storing structured,
+PEARL-LLM Memory (`.pearl`) is a JSON-based file format for storing structured,
 layered, verifiable context that persists across agent sessions. It gives
 autonomous agents a durable memory with immutable history, temperature-graded
 recall, cryptographic chain of custody, and branching decision trails.
