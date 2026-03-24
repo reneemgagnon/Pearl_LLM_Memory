@@ -1,4 +1,4 @@
-# PEARL-LLM Memory
+# PEARL(TM)-LLM Memory
 
 **PEARL**: Protected · Evolving · Annotation · Resistant · Layering
 
