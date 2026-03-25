@@ -11,6 +11,7 @@
     "media_type",
     "spec",
     "encoding",
+    "_core_hash",
     "core",
     "surface",
     "lineage",
@@ -45,7 +46,8 @@
           "const": "PEARL-CHAT"
         },
         "version": {
-          "type": "string"
+          "type": "string",
+          "pattern": "^0\\.2(\\.\\d+)?$"
         },
         "compatibility": {
           "type": "array",
@@ -299,7 +301,13 @@
         "active_branch_id",
         "hot",
         "warm",
-        "cold"
+        "cold",
+        "current_understanding",
+        "current_plan",
+        "open_loops",
+        "resolved_items",
+        "retrieval_cues",
+        "attention_weights"
       ],
       "properties": {
         "updated_at": {
@@ -385,7 +393,10 @@
         "genesis_layer_id",
         "current_layer_id",
         "depth",
-        "chain_hash"
+        "branch_count",
+        "chain_hash",
+        "chain_hash_derivation",
+        "state_hash"
       ],
       "properties": {
         "genesis_layer_id": {
@@ -556,7 +567,8 @@
         "branch_id",
         "name",
         "status",
-        "head_layer_id"
+        "head_layer_id",
+        "layer_ids"
       ],
       "properties": {
         "branch_id": {
@@ -648,9 +660,24 @@
           ]
         },
         "phase": {
-          "type": [
-            "string",
-            "null"
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "audit",
+                "design",
+                "refactor",
+                "verification",
+                "handoff",
+                "investigation",
+                "planning",
+                "implementation",
+                "review"
+              ]
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "actor": {

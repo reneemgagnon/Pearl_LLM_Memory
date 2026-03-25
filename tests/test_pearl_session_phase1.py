@@ -26,6 +26,14 @@ def run_cli(*args: str) -> subprocess.CompletedProcess[str]:
 
 
 class PearlSessionPhase1Tests(unittest.TestCase):
+    def test_help_text_uses_clean_v02_description(self) -> None:
+        result = run_cli("--help")
+        self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
+        self.assertIn("PEARL-CHAT v0.2", result.stdout)
+        self.assertIn("Protected - Evolving - Annotation - Resistant - Layering", result.stdout)
+        self.assertNotIn("\u00c3", result.stdout)
+        self.assertNotIn("\u00e2", result.stdout)
+
     def test_file_flag_after_subcommand_is_supported(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             pearl_file = Path(tmp) / "cli-order.pearl"
@@ -112,9 +120,33 @@ class PearlSessionPhase1Tests(unittest.TestCase):
         self.assertIn("PEARL-CHAT v0.2", spec_text)
         self.assertEqual(schema["$id"], "https://nobot.ai/schemas/pearl/chat-context/0.2/pearl-chat.schema.json")
         self.assertEqual(schema["properties"]["pearl_version"]["pattern"], r"^0\.2(\.\d+)?$")
+        self.assertIn("_core_hash", schema["required"])
+        self.assertEqual(schema["properties"]["spec"]["properties"]["version"]["pattern"], r"^0\.2(\.\d+)?$")
+        self.assertIn("current_understanding", schema["$defs"]["surfaceState"]["required"])
+        self.assertIn("state_hash", schema["$defs"]["lineage"]["required"])
+        self.assertIn("layer_ids", schema["$defs"]["branch"]["required"])
         self.assertIn("suspended", schema["$defs"]["branch"]["properties"]["status"]["enum"])
         self.assertIn("rejected", schema["$defs"]["branch"]["properties"]["status"]["enum"])
         self.assertIn("reopen_event", schema["$defs"]["layer"]["properties"]["kind"]["enum"])
+
+    def test_surface_output_is_ascii_safe(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            pearl_file = Path(tmp) / "surface-output.pearl"
+            init_result = run_cli(
+                "--file",
+                str(pearl_file),
+                "init",
+                "--objective",
+                "Surface output test",
+                "--force",
+            )
+            self.assertEqual(init_result.returncode, 0, msg=init_result.stderr or init_result.stdout)
+
+            surface_result = run_cli("--file", str(pearl_file), "surface")
+            self.assertEqual(surface_result.returncode, 0, msg=surface_result.stderr or surface_result.stdout)
+            self.assertIn("Core Immutable    : OK enforced", surface_result.stdout)
+            self.assertNotIn("\u00c3", surface_result.stdout)
+            self.assertNotIn("\u00e2", surface_result.stdout)
 
 
 if __name__ == "__main__":

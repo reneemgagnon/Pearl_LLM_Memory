@@ -1,143 +1,208 @@
 ---
 name: pearl-context
 description: >
-  Temporal context archive for agent sessions using the PEARL-CHAT v0.2 format (.pearl files).
-  PEARL = Protected · Evolving · Annotation · Resistant · Layering. Provides structured, layered
-  memory with temperature-graded context (hot/warm/cold), immutable core, JCS-hashed chain of
-  custody, branching with accept/reject tracking, evidence refs, layer phases, unsealing, and
-  capsule compression. Use this skill at the START of any multi-step task, complex refactor,
-  debugging session, architectural exploration, security audit, or long-running coding project.
-  Also trigger when the user mentions "pearl", ".pearl", "context archive", "session memory",
-  "temporal context", "session state", or when you detect the task will require more than ~5
-  tool calls. If `.pearl-context/session.pearl` exists, ALWAYS load it first. Think of PEARL as
-  geological memory: immutable core at the center, cold compacted history, warm recent context,
-  hot lava at the surface.
+  Temporal context archive for agent sessions using the PEARL-CHAT v0.2 format
+  (.pearl files). Provides structured, layered memory with hot/warm/cold bands,
+  immutable core, hash-linked lineage, evidence refs, branching, compaction,
+  unsealing, and verification. Use this skill at the start of multi-step tasks,
+  long debugging sessions, refactors, investigations, handoffs, or when the user
+  mentions pearl, .pearl, context archive, session memory, temporal context, or
+  session state.
 ---
 
-# PEARL Context v0.2 — Temporal Archive Skill
+# PEARL Context v0.2
 
-## What's New in v0.2
+Use this skill when the work will span enough steps that losing context would
+hurt correctness or momentum.
 
-1. **Core immutability enforced** — `_core_hash` snapshot at genesis, verified every write
-2. **JCS-RFC8785** canonical serialization for all hashing (deterministic, verifiable)
-3. **Explicit chain_hash** — `SHA256(prior_chain_hash | layer_hash)`, walkable by any verifier
-4. **Layer phases** — `--phase audit|design|refactor|verification|handoff|...`
-5. **Unseal command** — promote cold → hot with `unseal_event` audit trail
-6. **Single active branch** — switching suspends prior branches automatically
-7. **Accept/reject on merge** — `--accept` and `--reject` track branch outcomes
-8. **Operational brief** — `current_understanding` is a working summary, not a seed echo
-9. **Evidence refs** — `--evidence "file.py|grep:pattern|test:output"` on every layer
-10. **Capsule compression** — large cold capsules auto-compress with zlib+base64
+## When To Trigger It
+
+Use PEARL when any of these are true:
+
+- The task will likely take more than five tool calls.
+- The work involves debugging, investigation, refactoring, design comparison,
+  verification, or handoff.
+- The user explicitly mentions `pearl`, `.pearl`, session memory, or a context
+  archive.
+- You need a durable audit trail of findings, decisions, evidence, and outcomes.
+
+## First Step: Inspect, Then Decide
+
+If `.pearl-context/session.pearl` exists, inspect it first. Do not blindly keep
+writing to it.
+
+After inspecting, choose exactly one of these paths:
+
+1. Reuse the current session if the objective is the same and you are continuing
+   the same work.
+2. Create a branch if the objective is the same but you are exploring an
+   alternative interpretation, design, or implementation path.
+3. Initialize a new session or use a different `--file` if the objective is
+   materially different from the current archive.
+
+This rule prevents unrelated tasks from being mixed into one PEARL file.
 
 ## Quick Reference
 
-All commands: `python <skill-path>/scripts/pearl_session.py <command>`
+All commands:
 
-### Initialize
+```bash
+python <skill-path>/scripts/pearl_session.py <command>
+```
+
+The CLI accepts `--file` either before or after the subcommand:
+
+```bash
+python <skill>/scripts/pearl_session.py --file .pearl-context/session.pearl surface
+python <skill>/scripts/pearl_session.py surface --file .pearl-context/session.pearl
+```
+
+## Initialize
+
 ```bash
 python <skill>/scripts/pearl_session.py init \
-  --objective "Refactor auth module" --seed-kind task \
-  --constraints "Backward compat|No new deps" --labels "refactor,auth"
+  --objective "Refactor auth module" \
+  --seed-kind task \
+  --constraints "Backward compat|No new deps" \
+  --labels "refactor,auth"
 ```
 
-### Add Layers (with phase + evidence)
+## Add Layers
+
+Use `phase` and `evidence` whenever possible.
+
 ```bash
-# Observation during audit phase
 python <skill>/scripts/pearl_session.py add-layer \
-  -k observation -s "Found 3 circular imports" \
-  --phase audit --evidence "src/auth/manager.py|grep:circular" --confidence 0.95
-
-# Tool result during verification
-python <skill>/scripts/pearl_session.py add-layer \
-  -k tool_result -s "All 47 tests pass after refactor" \
-  --phase verification --evidence "pytest:test_auth.py|coverage:92pct"
-
-# Decision during design
-python <skill>/scripts/pearl_session.py add-layer \
-  -k decision -s "Constructor injection over service locator" \
-  --phase design --resolves "Choose DI pattern" \
-  --understanding "DI chosen. Next: create Protocol interface, update 12 consumers."
+  --kind observation \
+  --phase audit \
+  --summary "Found 3 circular imports" \
+  --evidence "src/auth/manager.py|grep:circular" \
+  --confidence 0.95
 ```
 
-### Temperature Management
 ```bash
-python <skill>/scripts/pearl_session.py promote          # hot → warm
-python <skill>/scripts/pearl_session.py compact -s "Phase 1 done"  # warm → cold (auto-compresses if large)
-python <skill>/scripts/pearl_session.py unseal \          # cold → hot [NEW]
-  --layer-ids <id> --reason "Need to revisit finding"
+python <skill>/scripts/pearl_session.py add-layer \
+  --kind decision \
+  --phase design \
+  --summary "Constructor injection over service locator" \
+  --resolves "Choose DI pattern" \
+  --understanding "DI chosen. Next: create interface, update consumers, rerun tests."
 ```
 
-### Branching (single-active enforced)
+## Temperature Management
+
 ```bash
-python <skill>/scripts/pearl_session.py branch -n "try-DI" --switch
-python <skill>/scripts/pearl_session.py branch -n "try-locator" --switch  # suspends try-DI
-
-# Merge with accept/reject tracking [NEW]
-python <skill>/scripts/pearl_session.py merge -b "try-DI" \
-  -s "DI chosen: explicit deps, fully testable" \
-  --accept "try-DI" --reject "try-locator" --switch-to-main
+python <skill>/scripts/pearl_session.py promote
+python <skill>/scripts/pearl_session.py compact --summary "Phase 1 complete"
+python <skill>/scripts/pearl_session.py unseal \
+  --layer-ids <layer-id> \
+  --reason "Need to revisit earlier finding"
 ```
 
-### Surface & Context
+## Branching
+
+```bash
+python <skill>/scripts/pearl_session.py branch --name "try-di" --switch
+python <skill>/scripts/pearl_session.py branch --name "try-locator" --switch
+```
+
+Merge a branch back into the active synthesis path:
+
+```bash
+python <skill>/scripts/pearl_session.py merge \
+  --branch-id "try-di" \
+  --summary "DI chosen: explicit dependencies, easier testing" \
+  --accept "try-di" \
+  --reject "try-locator" \
+  --switch-to-main
+```
+
+## Surface and Retrieval
+
 ```bash
 python <skill>/scripts/pearl_session.py surface
 python <skill>/scripts/pearl_session.py load-context --token-budget 4000 --format text
-python <skill>/scripts/pearl_session.py verify   # core + hashes + chain + single branch
+python <skill>/scripts/pearl_session.py verify
 ```
 
-## Layer Kinds × Phases
+## Recommended Layer Kinds and Phases
 
-| Kind                     | Typical Phases                    |
-|--------------------------|-----------------------------------|
-| `observation`            | audit, investigation              |
-| `interpretation`         | audit, design, investigation      |
-| `counter_interpretation` | audit, review                     |
-| `decision`               | design, refactor, planning        |
-| `tool_result`            | verification, implementation      |
-| `synthesis`              | design, review                    |
-| `memory`                 | handoff                           |
+| Kind | Typical phases |
+|------|----------------|
+| `observation` | `audit`, `investigation` |
+| `interpretation` | `audit`, `design`, `investigation` |
+| `counter_interpretation` | `audit`, `review` |
+| `decision` | `design`, `planning`, `refactor` |
+| `tool_result` | `implementation`, `verification` |
+| `synthesis` | `design`, `review`, `handoff` |
+| `memory` | `handoff` |
 
-## Evidence Refs Format
+Supported phases in the reference CLI:
 
-Pipe-separated, freeform but conventionally:
-- Files: `src/auth/manager.py` or `src/auth/manager.py:42`
-- Tool runs: `grep:pattern`, `pytest:test_auth.py`, `bandit:output.json`
-- Diffs: `diff:abc123`, `git:commit:sha`
-- Tests: `test:test_auth::test_login_flow`
+- `audit`
+- `design`
+- `refactor`
+- `verification`
+- `handoff`
+- `investigation`
+- `planning`
+- `implementation`
+- `review`
 
-## Workflow Pattern
+## Evidence Refs
+
+Evidence refs are pipe-separated strings. Common forms:
+
+- File: `src/auth/manager.py`
+- File with line: `src/auth/manager.py:42`
+- Grep or search result: `grep:circular`
+- Test run: `pytest:test_auth.py`
+- Specific test: `test:test_auth::test_login_flow`
+- Diff or commit: `diff:abc123` or `git:commit:<sha>`
+
+## Working Pattern
+
+```text
+1. Inspect existing session if present.
+2. Reuse, branch, or init based on objective match.
+3. Add observations and evidence.
+4. Add interpretations and decisions.
+5. Perform the work.
+6. Add tool results for verification.
+7. Promote or compact when the hot band grows.
+8. Unseal or branch when revisiting older or alternate context.
+9. Run verify before handoff or major transitions.
 ```
-1. INIT          → Create .pearl with objective
-2. OBSERVE       → add-layer -k observation --phase audit --evidence "..."
-3. INTERPRET     → add-layer -k interpretation --phase audit
-4. DECIDE        → add-layer -k decision --phase design
-5. ACT           → (do the work)
-6. VERIFY        → add-layer -k tool_result --phase verification --evidence "..."
-7. PROMOTE       → promote (age hot layers to warm)
-8. REPEAT 2-7
-9. COMPACT       → compact (warm → cold, auto-compresses if large)
-10. UNSEAL       → unseal (if cold context needs revisiting)
-11. BRANCH/MERGE → branch/merge with --accept/--reject for alternatives
-12. SURFACE      → check state anytime
-```
 
-## Key Principles
+## v0.2 Operating Rules
 
-1. **Always init before complex tasks.** The seed anchors everything.
-2. **Use phases.** They classify *what stage of work* each layer belongs to.
-3. **Attach evidence.** Files, tool outputs, diffs — makes layers forensically useful.
-4. **Write operational briefs.** `--understanding` should say what's happening NOW, not echo the seed.
-5. **Branch when uncertain.** Use `--accept`/`--reject` to document the decision.
-6. **Unseal when needed.** Cold context can return to hot — but the unseal is logged.
-7. **Verify regularly.** Core integrity, hash chain, single active branch — all checked.
+- Treat `current_understanding` as an operational brief, not a restatement of the seed.
+- Keep evidence close to each consequential layer.
+- Prefer branching over overwriting when exploring alternatives.
+- Use a new file for unrelated objectives.
+- Run `verify` regularly on long-lived archives.
+
+## What `verify` Checks
+
+The v0.2 verifier checks more than core and chain hashes. It also checks:
+
+- `prior_layer_id` continuity
+- `prior_chain_hash` continuity
+- `lineage.depth`
+- `lineage.state_hash`
+- Surface band references
+- Active-branch consistency
+- Branch head integrity
+- Layer-to-branch references
 
 ## File Locations
 
-- Default: `.pearl-context/session.pearl`
-- Override: `--file` / `-f`
-- Gitignore `.pearl-context/` (session-local state)
+- Default session file: `.pearl-context/session.pearl`
+- Override: `--file` or `-f`
+- Store unrelated efforts in separate `.pearl` files instead of reusing one session
 
 ## References
 
 - Schema: `references/pearl-chat-schema.json`
 - Spec: `references/pearl-chat-spec.md`
+- Engine: `scripts/pearl_session.py`

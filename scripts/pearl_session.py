@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
 """
-pearl_session.py — PEARL-CHAT v0.2 Session Engine
-===================================================
-Protected · Evolving · Annotation · Resistant · Layering
+pearl_session.py - PEARL-CHAT v0.2 Session Engine
+=================================================
+Protected - Evolving - Annotation - Resistant - Layering
 
 v0.2 CHANGES FROM v0.1:
-    [1]  Core immutability enforced — core_hash at genesis, verified every write.
+    [1]  Core immutability enforced - core_hash at genesis, verified every write.
     [2]  JCS-RFC8785 canonical serialization for all hashing.
     [3]  Explicit chain_hash: SHA256(prior_chain_hash + "|" + layer_hash).
     [4]  Layer phases: audit, design, refactor, verification, handoff, etc.
-    [5]  unseal command — cold → hot with unseal_event traceability.
-    [6]  Single active branch enforced — switching suspends prior.
+    [5]  unseal command - cold -> hot with unseal_event traceability.
+    [6]  Single active branch enforced - switching suspends prior.
     [7]  Merge records accepted_branch_id and rejected_branch_ids.
     [8]  surface.current_understanding is an operational brief, not seed echo.
-    [9]  evidence_refs on every layer — files, tool runs, diffs, tests.
-    [10] Capsule compression — large capsules use zlib+base64.
+    [9]  evidence_refs on every layer - files, tool runs, diffs, tests.
+    [10] Capsule compression - large capsules use zlib+base64.
 
 Copyright 2025-2026 Maple Brain Healthcare Inc.
-PEARL™ is a trademark of Maple Brain Healthcare Inc.
+PEARL(TM) is a trademark of Maple Brain Healthcare Inc.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -57,6 +57,7 @@ MEDIA_TYPE = "application/vnd.pearl.chat+json"
 SPEC_NAME = "PEARL-CHAT"
 HASH_ALGORITHM = "sha256"
 CHAIN_SEP = "|"
+CLI_DESCRIPTION = "PEARL-CHAT v0.2 - Protected - Evolving - Annotation - Resistant - Layering"
 
 DEFAULT_PEARL_DIR = Path(".pearl-context")
 DEFAULT_PEARL_FILE = DEFAULT_PEARL_DIR / "session.pearl"
@@ -295,7 +296,7 @@ def cmd_init(args):
     }
 
     _save(pearl, fp)
-    print(f"✓ PEARL v0.2 session initialized at {fp}")
+    print(f"OK PEARL v0.2 session initialized at {fp}")
     print(f"  Context ID : {cid}")
     print(f"  Core Hash  : {ch[:24]}...")
     print(f"  Objective  : {args.objective}")
@@ -353,7 +354,7 @@ def cmd_add_layer(args):
     _advance_lineage(pearl, lid, prior_id, ch, prior_ch)
 
     _save(pearl, fp)
-    print(f"✓ Layer added: {lid}")
+    print(f"OK Layer added: {lid}")
     print(f"  Kind       : {args.kind}" + (f" [{args.phase}]" if args.phase else ""))
     print(f"  Temp       : {layer['temperature']}")
     print(f"  Summary    : {args.summary[:80]}...")
@@ -385,8 +386,8 @@ def cmd_promote(args):
 
     _touch_surface(pearl, now, ENGINE_ACTOR)
     _save(pearl, fp)
-    print(f"✓ Promoted {len(promote)} layers: hot → warm")
-    for lid in promote: print(f"  → {lid}")
+    print(f"OK Promoted {len(promote)} layers: hot -> warm")
+    for lid in promote: print(f"  -> {lid}")
 
 # ===========================================================================
 # COMPACT [FEEDBACK #10]
@@ -418,7 +419,7 @@ def cmd_compact(args):
         "layer_id": cid, "created_at": now, "temperature": "cold", "kind": "compaction_event",
         "phase": None, "actor": ENGINE_ACTOR,
         "branch_id": active_branch_id,
-        "caused_by": [{"type": "compaction", "ref": lid, "summary": "warm→cold"} for lid in warm],
+        "caused_by": [{"type": "compaction", "ref": lid, "summary": "warm->cold"} for lid in warm],
         "evidence_refs": list(set(evs)), "state": state, "prior_capsule": cap,
         "hashes": {"layer_hash": lh, "chain_hash": ch, "prior_layer_id": prior_id,
                    "prior_chain_hash": pch, "prior_capsule_hash": cap["hash"]},
@@ -445,11 +446,11 @@ def cmd_compact(args):
 
     _save(pearl, fp)
     rep = cap["representation"]
-    print(f"✓ Compacted {len(warm)} warm layers → cold ({rep})")
+    print(f"OK Compacted {len(warm)} warm layers -> cold ({rep})")
     print(f"  Compaction layer: {cid}")
     print(f"  Chain: {ch[:24]}...")
     if rep == "compressed_inline":
-        print(f"  Compressed: {cap['size_bytes']}B → {cap['compressed_bytes']}B ({cap['compressed_bytes']/cap['size_bytes']*100:.0f}%)")
+        print(f"  Compressed: {cap['size_bytes']}B -> {cap['compressed_bytes']}B ({cap['compressed_bytes']/cap['size_bytes']*100:.0f}%)")
 
 # ===========================================================================
 # UNSEAL [FEEDBACK #5]
@@ -468,7 +469,7 @@ def cmd_unseal(args):
 
     uid = f"layer-{_uid()}"
     state = {"summary": f"Unsealed {len(targets)} cold layers: {args.reason}",
-             "claims": [f"Promoted {t} cold → hot" for t in targets]}
+             "claims": [f"Promoted {t} cold -> hot" for t in targets]}
     lh = _hash_jcs(state); ch = _chain(pch, lh)
 
     layer = {
@@ -493,10 +494,10 @@ def cmd_unseal(args):
     _advance_lineage(pearl, uid, prior_id, ch, pch)
 
     _save(pearl, fp)
-    print(f"✓ Unsealed {len(targets)} layers: cold → hot")
+    print(f"OK Unsealed {len(targets)} layers: cold -> hot")
     print(f"  Reason: {args.reason}")
     print(f"  Unseal layer: {uid}")
-    for t in targets: print(f"  ↑ {t}")
+    for t in targets: print(f"  ^ {t}")
 
 # ===========================================================================
 # BRANCH [FEEDBACK #6]
@@ -540,7 +541,7 @@ def cmd_branch(args):
     _touch_surface(pearl, now, layer["actor"])
     _advance_lineage(pearl, blid, head, ch, pch, extra={"branch_count": len(pearl["branches"])})
     _save(pearl, fp)
-    print(f"✓ Branch created: {args.name} ({bid})")
+    print(f"OK Branch created: {args.name} ({bid})")
 
 # ===========================================================================
 # MERGE [FEEDBACK #7]
@@ -610,7 +611,7 @@ def cmd_merge(args):
     _advance_lineage(pearl, sid, prior_id, ch, pch, extra={"branch_count": len(pearl["branches"])})
 
     _save(pearl, fp)
-    print(f"✓ Merged '{target['name']}' → synthesis {sid}")
+    print(f"OK Merged '{target['name']}' -> synthesis {sid}")
     if acc_id: print(f"  Accepted: {acc_id}")
     if rej_ids: print(f"  Rejected: {rej_ids}")
 
@@ -625,12 +626,12 @@ def cmd_surface(args):
     print("  PEARL v0.2 SESSION SURFACE")
     print("=" * 64)
     print(f"  Objective         : {c['objective']}")
-    print(f"  Focus             : {s.get('focus', '—')}")
-    print(f"  Understanding     : {s.get('current_understanding', '—')}")
+    print(f"  Focus             : {s.get('focus', '-')}")
+    print(f"  Understanding     : {s.get('current_understanding', '-')}")
     print(f"  Active Branch     : {s['active_branch_id']}")
     print(f"  Depth             : {li['depth']}")
     print(f"  Chain Hash        : {li['chain_hash'][:24]}...")
-    print(f"  Core Immutable    : {'✓ enforced' if pearl.get('_core_hash') else '? (v0.1)'}")
+    print(f"  Core Immutable    : {'OK enforced' if pearl.get('_core_hash') else '? (v0.1)'}")
     print(f"  Updated           : {s['updated_at']}")
     print()
 
@@ -647,15 +648,15 @@ def cmd_surface(args):
     print()
     print("  BRANCHES:")
     for b in pearl["branches"]:
-        m = {"active": "●", "candidate": "○", "merged": "✓", "rejected": "✗", "suspended": "◌"}.get(b["status"], "?")
-        print(f"    {m} {b['name']} ({b['status']}) — {b.get('intent', '')[:40]}")
+        m = {"active": "*", "candidate": "o", "merged": "+", "rejected": "x", "suspended": "~"}.get(b["status"], "?")
+        print(f"    {m} {b['name']} ({b['status']}) - {b.get('intent', '')[:40]}")
 
     if s.get("open_loops"):
         print(); print("  OPEN LOOPS:")
-        for loop in s["open_loops"]: print(f"    ○ {loop}")
+        for loop in s["open_loops"]: print(f"    o {loop}")
     if s.get("current_plan"):
         print(); print("  CURRENT PLAN:")
-        for step in s["current_plan"]: print(f"    → {step}")
+        for step in s["current_plan"]: print(f"    -> {step}")
     print("=" * 64)
 
 # ===========================================================================
@@ -719,7 +720,7 @@ def cmd_update_surface(args):
         pearl["surface"].setdefault("resolved_items", []).append(args.resolve_loop)
     now = _now()
     _touch_surface(pearl, now, ENGINE_ACTOR)
-    _save(pearl, fp); print("✓ Surface updated.")
+    _save(pearl, fp); print("OK Surface updated.")
 
 # ===========================================================================
 # DUMP
@@ -731,108 +732,6 @@ def cmd_dump(args):
 # VERIFY [FEEDBACK #1, #2, #3, #6]
 # ===========================================================================
 def cmd_verify(args):
-    fp = Path(args.file); pearl = _load(fp)
-    errors = []; layers = pearl["layers"]
-
-    # Core immutability [#1]
-    ch = pearl.get("_core_hash")
-    if ch:
-        actual = _core_hash(pearl["core"])
-        if actual != ch: errors.append(f"CORE TAMPERED: {ch[:24]}... vs {actual[:24]}...")
-        else: print("✓ Core immutability: intact")
-    else:
-        print("⚠ No _core_hash (v0.1 file?) — core check skipped")
-
-    # Layer hashes [#2]
-    lok = 0
-    for l in layers:
-        exp = _hash_jcs(l["state"])
-        if exp != l["hashes"]["layer_hash"]:
-            errors.append(f"Layer {l['layer_id']}: hash mismatch")
-        else: lok += 1
-    print(f"✓ Layer hashes: {lok}/{len(layers)} verified")
-
-    # Chain walkthrough [#3]
-    if layers:
-        g = layers[0]; gc = g["hashes"].get("chain_hash")
-        exp_gc = _chain("genesis", g["hashes"]["layer_hash"])
-        if gc and gc != exp_gc:
-            errors.append("Genesis chain_hash mismatch")
-        elif gc:
-            running = gc; cv = 1
-            for l in layers[1:]:
-                lc = l["hashes"].get("chain_hash")
-                if lc:
-                    exp = _chain(running, l["hashes"]["layer_hash"])
-                    if lc != exp:
-                        errors.append(f"Chain break at {l['layer_id']}")
-                    else: cv += 1
-                    running = lc
-            print(f"✓ Chain hash: {cv} links verified")
-
-    # Single active branch [#6]
-    ac = sum(1 for b in pearl["branches"] if b["status"] == "active")
-    if ac > 1: errors.append(f"Multiple active branches: {ac}")
-    elif ac == 1: print("✓ Single active branch: enforced")
-
-    if errors:
-        print(f"\n✗ FAILED — {len(errors)} error(s):")
-        for e in errors: print(f"  ✗ {e}")
-        sys.exit(1)
-    else:
-        print(f"\n✓ All checks passed. {len(layers)} layers, chain intact.")
-
-# ===========================================================================
-# CLI
-# ===========================================================================
-def build_parser():
-    p = argparse.ArgumentParser(prog="pearl_session",
-        description="PEARL-CHAT v0.2 — Protected · Evolving · Annotation · Resistant · Layering")
-    p.add_argument("--file", "-f", default=str(DEFAULT_PEARL_FILE))
-    subs = p.add_subparsers(dest="command", required=True)
-
-    s = subs.add_parser("init")
-    s.add_argument("--objective", "-o", required=True); s.add_argument("--seed-kind", default="task",
-        choices=["chat","task","incident","document","prompt","question","mixed"])
-    s.add_argument("--constraints"); s.add_argument("--stakes"); s.add_argument("--owner")
-    s.add_argument("--labels"); s.add_argument("--force", action="store_true")
-
-    s = subs.add_parser("add-layer")
-    s.add_argument("--kind", "-k", required=True, choices=LAYER_KINDS)
-    s.add_argument("--summary", "-s", required=True)
-    s.add_argument("--phase", "-p", choices=LAYER_PHASES, default=None)
-    s.add_argument("--temperature", "-t", choices=["hot","warm","cold","governance"])
-    s.add_argument("--claims"); s.add_argument("--questions"); s.add_argument("--confidence", type=float)
-    s.add_argument("--open-loops"); s.add_argument("--resolves"); s.add_argument("--understanding")
-    s.add_argument("--payload"); s.add_argument("--evidence"); s.add_argument("--tags")
-    s.add_argument("--actor-type", default="assistant"); s.add_argument("--actor-id", default="pearl-agent")
-
-    s = subs.add_parser("promote"); s.add_argument("--force", action="store_true")
-    s = subs.add_parser("compact"); s.add_argument("--summary", "-s")
-
-    s = subs.add_parser("unseal")
-    s.add_argument("--layer-ids", required=True); s.add_argument("--reason", required=True)
-
-    s = subs.add_parser("branch")
-    s.add_argument("--name", "-n", required=True); s.add_argument("--intent")
-    s.add_argument("--switch", action="store_true")
-
-    s = subs.add_parser("merge")
-    s.add_argument("--branch-id", "-b", required=True); s.add_argument("--summary", "-s")
-    s.add_argument("--accept"); s.add_argument("--reject"); s.add_argument("--switch-to-main", action="store_true")
-
-    subs.add_parser("surface"); subs.add_parser("dump"); subs.add_parser("verify")
-
-    s = subs.add_parser("load-context")
-    s.add_argument("--token-budget", type=int); s.add_argument("--format", choices=["json","text"], default="json")
-
-    s = subs.add_parser("update-surface")
-    s.add_argument("--focus"); s.add_argument("--understanding"); s.add_argument("--plan")
-    s.add_argument("--add-loop"); s.add_argument("--resolve-loop")
-
-    return p
-
-def cmd_verify_v2(args):
     fp = Path(args.file); pearl = _load(fp)
     errors = []
     layers = pearl["layers"]
@@ -949,14 +848,15 @@ def cmd_verify_v2(args):
         sys.exit(1)
     print(f"\nOK All checks passed. {len(layers)} layers, chain intact.")
 
-def build_parser_v2():
+def build_parser():
     file_parent = argparse.ArgumentParser(add_help=False)
     file_parent.add_argument("--file", "-f", default=argparse.SUPPRESS)
 
     p = argparse.ArgumentParser(
         prog="pearl_session",
-        description="PEARL-CHAT v0.2 â€” Protected Â· Evolving Â· Annotation Â· Resistant Â· Layering",
+        description=CLI_DESCRIPTION,
     )
+    p.description = CLI_DESCRIPTION
     p.add_argument("--file", "-f", default=str(DEFAULT_PEARL_FILE))
     subs = p.add_subparsers(dest="command", required=True)
 
@@ -1006,10 +906,10 @@ def build_parser_v2():
 DISPATCH = {"init": cmd_init, "add-layer": cmd_add_layer, "promote": cmd_promote,
     "compact": cmd_compact, "unseal": cmd_unseal, "branch": cmd_branch, "merge": cmd_merge,
     "surface": cmd_surface, "load-context": cmd_load_context, "update-surface": cmd_update_surface,
-    "dump": cmd_dump, "verify": cmd_verify_v2}
+    "dump": cmd_dump, "verify": cmd_verify}
 
 def main():
-    args = build_parser_v2().parse_args()
+    args = build_parser().parse_args()
     DISPATCH[args.command](args)
 
 if __name__ == "__main__":

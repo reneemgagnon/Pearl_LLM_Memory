@@ -1,124 +1,174 @@
 # PEARL(TM)-LLM Memory
 
-**PEARL**: Protected · Evolving · Annotation · Resistant · Layering
+**PEARL** = Protected - Evolving - Annotation - Resistant - Layering
 
-An open temporal context format and reference toolkit for agentic memory.
+PEARL is an open, JSON-native temporal context format for agent memory. It is
+designed for coding agents, research agents, orchestration runtimes, and other
+systems that need durable, inspectable session state instead of opaque vendor
+memory.
 
-## What PEARL Is
+This repository is the v0.2 reference path. The docs, schema, tests, and CLI
+all target PEARL-CHAT v0.2.
 
-PEARL-LLM Memory (`.pearl`) is a JSON-based file format for storing structured,
-layered, verifiable context that persists across agent sessions. It gives
-autonomous agents a durable memory with immutable history, temperature-graded
-recall, cryptographic chain of custody, and branching decision trails.
+## What v0.2 Means
 
-The format is agent-agnostic. The reference implementation is a zero-dependency
-Python CLI. Both are open.
+PEARL-CHAT v0.2 standardizes the behavior implemented by the reference CLI:
 
-## Why It Exists
+- Immutable `core`, guarded by `_core_hash`
+- Append-only `layers`
+- Canonical JCS-RFC8785 hashing
+- Explicit `chain_hash = SHA256(prior_chain_hash | layer_hash)`
+- `surface` as the fully materialized working state
+- Hot, warm, and cold temperature bands
+- Single active branch enforcement
+- Explicit branch merge outcomes with accept/reject tracking
+- Cold-to-hot unsealing with audit traceability
+- A stronger `verify` command that checks structural and lineage integrity
 
-Autonomous agents — coding agents, research agents, orchestration frameworks —
-lose context between sessions. When they do retain state, it is typically
-opaque, unverifiable, and locked to a single vendor.
+## Why PEARL Exists
 
-PEARL addresses this by defining a portable, auditable memory container that
-any agent runtime can read and write. The goal is interoperable agentic memory:
-one format, many runtimes, verifiable history.
+Most agent systems lose context between runs or keep it in a format that is hard
+to inspect, validate, reuse, or migrate. PEARL provides a portable envelope that
+any runtime can read because it is still just JSON, while preserving the history
+and evidence that agents actually need.
 
-**Compatibility targets:** Claude Code, OpenAI Codex, OpenClaw, NemoClaw /
-OpenShell, LangChain, CrewAI, and any system that can read JSON.
+The goal is interoperable agentic memory:
 
-## Core Design Goals
+- One durable file format
+- Many compatible runtimes
+- Verifiable lineage instead of trust-me state
 
-- **Immutable core.** The seed context is hash-locked at creation and never mutated.
-- **Append-only layers.** New information is added as layers; prior layers are never rewritten.
-- **Temperature model.** Hot (working set), warm (recent), cold (compacted archive), core (immutable seed).
-- **Cryptographic lineage.** Every layer carries a JCS-RFC8785 canonical hash; chain hashes link layers into a verifiable sequence.
-- **Branching and merging.** Explore alternatives on branches; merge with explicit accept/reject tracking.
-- **Evidence refs.** Each layer can cite files, tool outputs, diffs, and test results.
-- **Plain JSON.** No special parser required. Any tool that reads JSON can read a `.pearl` file.
+## Core v0.2 Invariants
 
-## Key Features (v0.2)
+The reference implementation and docs assume these invariants:
 
-- Core immutability enforced at the engine level (hash-guarded)
-- JCS-RFC8785 canonical JSON for deterministic, verifiable hashing
-- Explicit chain derivation: `SHA256(prior_chain_hash | layer_hash)`
-- Layer phases: audit, design, refactor, verification, handoff, and more
-- Evidence refs: file paths, tool runs, diffs, test outputs per layer
-- Unseal: promote cold layers back to hot with full audit trail
-- Single active branch: switching suspends prior automatically
-- Accept/reject tracking on merge synthesis
-- Capsule compression: zlib+base64 for large cold archives
-- Operational briefs: `current_understanding` as a working summary
+1. `core` does not change after initialization.
+2. `_core_hash` matches the canonical hash of `core`.
+3. `layers` are append-only.
+4. Every layer has a deterministic `layer_hash`.
+5. Every non-genesis layer has a `chain_hash` derived from the prior chain hash.
+6. `lineage.current_layer_id` and `lineage.chain_hash` point to the latest layer.
+7. `surface.active_branch_id` points to exactly one active branch.
+8. Every branch `head_layer_id` matches the final element in its `layer_ids`.
+9. Temperature bands only reference layers that exist and match that temperature.
 
-## Conceptual Model
+## Quick Start
 
-```
-core        — the immutable seed (objective, constraints, facts)
-layers      — what was discovered, decided, or produced
-surface     — current working understanding (hot/warm/cold bands)
-branches    — parallel lines of exploration
-capsules    — compressed snapshots of prior state
-lineage     — cryptographic continuity across all state transitions
-```
-
-A model loads context in priority order: core, hot layers, warm layers,
-current understanding, active branch head, then selected cold layers as needed.
-
-## Example Use Cases
-
-- **Coding agent memory.** A refactoring session persists decisions, tool
-  results, and verification outcomes across multiple agent invocations.
-- **Multi-agent handoff.** Agent A writes observations and decisions to a
-  `.pearl` file; Agent B loads it and continues with full context.
-- **Audit trail.** Every layer is hash-chained. A compliance reviewer can
-  verify that no prior state was silently altered.
-- **Long-running workflows.** A research or investigation task that spans
-  days compacts warm context to cold, unseals when needed, and branches
-  to explore alternatives.
-- **Secure sandboxed agents.** Agents running inside NemoClaw / OpenShell
-  use `.pearl` files scoped to the sandbox filesystem policy for persistent,
-  verifiable memory.
-
-## Installation & Integration
-
-This repository can be used as a standalone toolkit, embedded library, or
-skill/integration for agent runtimes.
-
-### Standalone CLI
+Initialize a new PEARL session:
 
 ```bash
 python scripts/pearl_session.py init --objective "Refactor auth module"
-python scripts/pearl_session.py add-layer -k observation -s "Found 3 circular imports"
+```
+
+Add evidence-backed working memory:
+
+```bash
+python scripts/pearl_session.py add-layer ^
+  --kind observation ^
+  --phase audit ^
+  --summary "Found three circular imports" ^
+  --evidence "src/auth/manager.py|grep:circular"
+```
+
+Inspect the current surface:
+
+```bash
 python scripts/pearl_session.py surface
+python scripts/pearl_session.py load-context --token-budget 4000 --format text
 ```
 
-### As an agent skill (example paths)
+Verify the archive:
 
-```
-# Claude Code skills directory
-~/.claude/skills/pearl-context/
-
-# Or any agent runtime that supports skill directories
-<agent-skills-dir>/pearl-context/
+```bash
+python scripts/pearl_session.py verify
 ```
 
-### Requirements
+The CLI accepts `--file` either before or after the subcommand:
 
-- Python 3.10+ (stdlib only: json, hashlib, uuid, zlib, base64, argparse)
-- Zero external dependencies
+```bash
+python scripts/pearl_session.py --file .pearl-context/session.pearl surface
+python scripts/pearl_session.py surface --file .pearl-context/session.pearl
+```
+
+## Session Selection Rules
+
+The most common source of PEARL drift is mixing unrelated work into the same
+archive. Use this rule set consistently:
+
+- Reuse the current session when the task is the same objective and you are
+  continuing the same line of work.
+- Branch when the task is still the same objective but you are testing an
+  alternative interpretation, design, or implementation path.
+- Initialize a new session or use a different `--file` when the objective is
+  materially different from the existing archive.
+
+In practice, inspect `.pearl-context/session.pearl` first, then decide whether
+to continue, branch, or start a new file.
+
+## What `verify` Checks in v0.2
+
+The v0.2 verifier is stronger than the minimal v0.1 checks. It validates:
+
+- Core hash integrity
+- Layer hash integrity
+- Chain hash continuity
+- `prior_layer_id` and `prior_chain_hash` continuity
+- `lineage.current_layer_id`, `lineage.chain_hash`, and `lineage.depth`
+- `surface.state_hash`
+- Temperature-band references
+- Active-branch consistency
+- Branch head and branch layer references
+- Layer-to-branch references
+
+## Temperature Model
+
+- `hot`: immediate working set
+- `warm`: recent but not primary
+- `cold`: compacted or revisited prior context
+- `core`: immutable seed, stored outside temperature bands
+
+Compaction moves warm context inward. Unsealing promotes selected cold context
+back to hot and records that action as a new layer.
+
+## Branching Model
+
+- `main` is the default root branch created at initialization.
+- Only one branch should be `active` at a time.
+- Creating a branch records a `branch_event`.
+- Merging records a synthesis layer and can mark branches as accepted or rejected.
+- Switching to another active branch suspends the prior active branch.
 
 ## Repository Layout
 
+```text
+references/
+  pearl-chat-spec.md
+  pearl-chat-schema.json
+scripts/
+  pearl_session.py
+tests/
+  test_pearl_session_phase1.py
+agents/
+assets/
+SKILL.md
 ```
-references/             Format specification and schema (CC BY 4.0)
-  pearl-chat-spec.md      PEARL-CHAT format specification
-  pearl-chat-schema.json  JSON Schema for .pearl file validation
-scripts/                Reference implementation (Apache-2.0)
-  pearl_session.py        Session engine CLI
-agents/                 Agent integration configs (Apache-2.0)
-assets/                 Logo, gitignore template
-SKILL.md                Skill definition for agent runtimes
+
+## Development and Tests
+
+The reference implementation is a zero-dependency Python CLI. The regression
+tests exercise the CLI as an end user would.
+
+Run the test suite:
+
+```bash
+py -3.11 -m unittest discover -s tests -v
 ```
+
+## Compatibility
+
+PEARL-CHAT v0.2 may read legacy 0.1-era archives in limited cases, but the
+reference docs, schema, and validation path in this repository are now centered
+on v0.2 artifacts.
 
 ## Licensing
 
@@ -126,44 +176,17 @@ This project uses a three-layer licensing structure:
 
 | Layer | Scope | License |
 |-------|-------|---------|
-| Format specification & docs | [`references/*`](references/) | [CC BY 4.0](LICENSE.docs) |
-| Reference implementation | [`scripts/*`](scripts/), [`agents/*`](agents/), [`SKILL.md`](SKILL.md) | [Apache-2.0](LICENSE) |
+| Format specification and docs | `references/*` | CC BY 4.0 |
+| Reference implementation | `scripts/*`, `agents/*`, `SKILL.md` | Apache-2.0 |
 | Enterprise platform | Orchestration, compliance, control plane, admin UI | Proprietary EULA |
 
-The `.pearl` format is open. The reference tools are open. Enterprise
-orchestration, compliance workflow, appliance, and control-plane offerings
-by Maple Brain Healthcare Inc. are proprietary.
-
-See [`LICENSING.md`](LICENSING.md) for full details and [`NOTICE`](NOTICE)
-for attribution.
+See `LICENSING.md`, `LICENSE`, `LICENSE.docs`, and `NOTICE` for details.
 
 ## Trademark Notice
 
-PEARL™ is a trademark of Maple Brain Healthcare Inc.
+PEARL(TM) is a trademark of Maple Brain Healthcare Inc.
 
-The `.pearl` file extension and "PEARL-CHAT" format identifier may be used
-freely to describe genuine compatibility with the published specification.
-Controlled marks — including PEARL™ Enterprise, PEARL™ Certified, and
-PEARL™ Appliance — are reserved and require written permission.
-
-See [`TRADEMARKS.md`](TRADEMARKS.md) for the full trademark policy.
-
-## Security
-
-The PEARL format includes cryptographic hash chains (JCS-RFC8785 + SHA-256)
-for tamper detection and core-immutability enforcement. These provide
-integrity verification, not encryption. Sensitive data should be protected
-at the storage and transport layer, not inside the `.pearl` file itself.
-
-If you discover a security issue, please report it to Maple Brain
-Healthcare Inc. rather than filing a public issue.
-
-## Contributing
-
-Contributions to the open specification and reference implementation are
-welcome. By submitting a contribution you agree that it will be licensed
-under the applicable layer license (CC BY 4.0 for spec/docs, Apache-2.0
-for code).
-
-Please open an issue to discuss significant changes before submitting a
-pull request.
+The `.pearl` file extension and `PEARL-CHAT` format identifier may be used to
+describe genuine compatibility with the published specification. Controlled
+marks such as `PEARL(TM) Enterprise`, `PEARL(TM) Certified`, and
+`PEARL(TM) Appliance` remain reserved.
