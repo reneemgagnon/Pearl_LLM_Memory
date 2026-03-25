@@ -54,6 +54,12 @@ The reference implementation and docs assume these invariants:
 
 ## Quick Start
 
+Install folder into Coder /agent SKILL directory as normal. 
+
+In new Agent session invoke with "Start a new PEARL-CONTEXT for this session " to create a new pearl. Afterwards you can ask "load prior PEARL and load ________(topic)". 
+
+As CLI for agents 
+
 Initialize a new PEARL session:
 
 ```bash
